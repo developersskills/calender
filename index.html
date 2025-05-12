@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ตารางงานร่วม</title>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #fff3e0;
+      margin: 0;
+      padding: 20px;
+    }
+    .calendar-container {
+      max-width: 1000px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .header button {
+      background-color: #ff9800;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    h1 {
+      color: #e65100;
+      font-size: 2em;
+      margin: 0;
+    }
+    .calendar {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 5px;
+      background-color: #ffe0b2;
+      padding: 10px;
+      border-radius: 10px;
+    }
+    .day-header {
+      font-weight: bold;
+      background-color: #ff9800;
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .day {
+      background-color: #ffffff;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      cursor: pointer;
+      min-height: 100px;
+      position: relative;
+    }
+    .day:hover {
+      background-color: #f5f5f5;
+    }
+    .day-number {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .task-preview {
+      font-size: 0.8em;
+      margin-bottom: 5px;
+    }
+    .add-task-btn {
+      background-color: #ff9800;
+      color: white;
+      border: none;
+      padding: 5px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.8em;
+      position: absolute;
+      bottom: 5px;
+      right: 5px;
+    }
+    .task-section {
+      margin-top: 20px;
+      text-align: left;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .task-input {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .task-input input {
+      flex: 1;
+      padding: 5px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    .task-input select {
+      padding: 5px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    .task-input button {
+      padding: 5px 10px;
+      background-color: #ff9800;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .task-list {
+      list-style: none;
+      padding: 0;
+    }
+    .task-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      margin-bottom: 5px;
+      cursor: pointer;
+    }
+    .task-item button {
+      background-color: #e65100;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-left: 5px;
+    }
+    .no-tasks {
+      color: #888;
+      font-style: italic;
+    }
+    .error-message {
+      color: red;
+      font-size: 0.9em;
+      text-align: center;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+<div class="calendar-container">
+  <div class="header">
+    <button onclick="previousMonth()">เดือนก่อนหน้า</button>
+    <h1 id="calendarTitle">ตารางงาน - พฤษภาคม 2568</h1>
+    <button onclick="nextMonth()">เดือนถัดไป</button>
+  </div>
+  <div class="calendar" id="calendar"></div>
+  <div class="task-section" id="taskSection" style="display: none;">
+    <h2 id="selectedDay"></h2>
+    <div class="task-input">
+      <input type="text" id="taskInput" placeholder="เพิ่มงานใหม่...">
+      <select id="taskColor">
+        <option value="#ffccbc">สีส้มอ่อน</option>
+        <option value="#ffcdd2">สีแดงอ่อน</option>
+        <option value="#c8e6c9">สีเขียวอ่อน</option>
+        <option value="#bbdefb">สีฟ้าอ่อน</option>
+      </select>
+      <button onclick="addTask()">เพิ่ม</button>
+    </div>
+    <ul class="task-list" id="taskList"></ul>
+  </div>
+  <div class="error-message" id="errorMessage"></div>
+</div>
+
+<script>
+  // การตั้งค่า Firebase (คุณต้องแทนที่ด้วยข้อมูล Firebase ของคุณ)
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    databaseURL: "YOUR_DATABASE_URL",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+
+  let db;
+  let firebaseInitialized = false;
+
+  // เริ่มต้น Firebase
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    firebaseInitialized = true;
+  } catch (error) {
+    console.error("Firebase initialization failed:", error);
+    document.getElementById('errorMessage').textContent = "ไม่สามารถเชื่อมต่อ Firebase ได้ กรุณาตรวจสอบการตั้งค่า";
+  }
+
+  let selectedDate = null;
+  let currentMonth = 4; // เริ่มที่พฤษภาคม (0 = ม.ค., 4 = พ.ค.)
+  let currentYear = 2568; // ใช้พ.ศ.
+
+  // ตัวอย่างงานเริ่มต้น
+  const initialTasks = {
+    '2568-05-01': [
+      { text: 'ประชุมทีม 10:00', color: '#ffccbc' },
+      { text: 'ส่งรายงาน 15:00', color: '#ffcdd2' }
+    ],
+    '2568-05-02': [
+      { text: 'ซื้อของ 09:00', color: '#c8e6c9' },
+      { text: 'โทรหาลูกค้า 14:00', color: '#bbdefb' },
+      { text: 'ออกกำลังกาย 18:00', color: '#ffccbc' }
+    ],
+    '2568-05-03': [
+      { text: 'ตรวจงาน 11:00', color: '#ffcdd2' }
+    ]
+  };
+
+  // บันทึกงานเริ่มต้นลง Firebase
+  function saveInitialTasks() {
+    if (!firebaseInitialized) return;
+    Object.keys(initialTasks).forEach(date => {
+      db.ref(`tasks/${date}`).once('value', (snapshot) => {
+        if (!snapshot.exists()) {
+          db.ref(`tasks/${date}`).set(initialTasks[date]);
+        }
+      });
+    });
+  }
+
+  // อัปเดตชื่อเดือนและปีในภาษาไทย
+  function updateCalendarTitle() {
+    const months = [
+      'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+    document.getElementById('calendarTitle').textContent = `ตารางงาน - ${months[currentMonth]} ${currentYear}`;
+  }
+
+  // สร้างตารางสำหรับเดือนที่เลือก
+  function generateCalendar() {
+    const calendar = document.getElementById('calendar');
+    calendar.innerHTML = ''; // ล้างตารางก่อนสร้างใหม่
+
+    // คำนวณวันที่เริ่มต้นของเดือน
+    const firstDayOfMonth = dayjs(`${currentYear - 543}-${currentMonth + 1}-01`); // แปลง พ.ศ. เป็น ค.ศ.
+    const daysInMonth = firstDayOfMonth.daysInMonth();
+    const firstDay = firstDayOfMonth.day();
+
+    // เพิ่มส่วนหัววัน
+    const daysOfWeek = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์'];
+    daysOfWeek.forEach(day => {
+      const dayHeader = document.createElement('div');
+      dayHeader.className = 'day-header';
+      dayHeader.textContent = day;
+      calendar.appendChild(dayHeader);
+    });
+
+    // เพิ่มช่องว่างสำหรับวันก่อนวันที่ 1
+    for (let i = 0; i < firstDay; i++) {
+      const emptyDay = document.createElement('div');
+      emptyDay.className = 'day';
+      calendar.appendChild(emptyDay);
+    }
+
+    // เพิ่มวันในเดือนและโหลดงาน
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayDiv = document.createElement('div');
+      dayDiv.className = 'day';
+      const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+      dayDiv.innerHTML = `
+          <div class="day-number">${day}</div>
+          <div class="task-preview" id="task-preview-${dateStr}"></div>
+          <button class="add-task-btn" onclick="showTasks('${dateStr}')">เพิ่มงาน</button>
+        `;
+      dayDiv.onclick = (e) => {
+        if (!e.target.classList.contains('add-task-btn')) showTasks(dateStr);
+      };
+      calendar.appendChild(dayDiv);
+      loadTasksForDay(dateStr);
+    }
+
+    updateCalendarTitle();
+  }
+
+  // เลื่อนไปเดือนก่อนหน้า
+  function previousMonth() {
+    currentMonth--;
+    if (currentMonth < 0) {
+      currentMonth = 11;
+      currentYear--;
+    }
+    generateCalendar();
+    document.getElementById('taskSection').style.display = 'none'; // ซ่อนส่วนงานเมื่อเปลี่ยนเดือน
+  }
+
+  // เลื่อนไปเดือนถัดไป
+  function nextMonth() {
+    currentMonth++;
+    if (currentMonth > 11) {
+      currentMonth = 0;
+      currentYear++;
+    }
+    generateCalendar();
+    document.getElementById('taskSection').style.display = 'none'; // ซ่อนส่วนงานเมื่อเปลี่ยนเดือน
+  }
+
+  // โหลดงานสำหรับแต่ละวันเพื่อแสดงในตาราง
+  function loadTasksForDay(dateStr) {
+    if (!firebaseInitialized) {
+      document.getElementById(`task-preview-${dateStr}`).textContent = '(ยังไม่ได้เชื่อมต่อ Firebase)';
+      return;
+    }
+    db.ref(`tasks/${dateStr}`).on('value', (snapshot) => {
+      const taskPreview = document.getElementById(`task-preview-${dateStr}`);
+      const tasks = snapshot.val();
+      taskPreview.innerHTML = '';
+      if (tasks) {
+        Object.values(tasks).forEach(task => {
+          const taskDiv = document.createElement('div');
+          taskDiv.style.backgroundColor = task.color;
+          taskDiv.style.padding = '2px';
+          taskDiv.style.marginBottom = '2px';
+          taskDiv.style.borderRadius = '3px';
+          taskDiv.textContent = task.text;
+          taskPreview.appendChild(taskDiv);
+        });
+      } else {
+        taskPreview.textContent = '(ไม่มีงาน)';
+      }
+    }, (error) => {
+      console.error("Error loading tasks:", error);
+      document.getElementById(`task-preview-${dateStr}`).textContent = '(เกิดข้อผิดพลาด)';
+    });
+  }
+
+  // แสดงงานสำหรับวันที่เลือก
+  function showTasks(dateStr) {
+    selectedDate = dateStr;
+    const [year, month, day] = dateStr.split('-');
+    const months = [
+      'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+    document.getElementById('taskSection').style.display = 'block';
+    document.getElementById('selectedDay').textContent = `งานวันที่ ${parseInt(day)} ${months[parseInt(month) - 1]} ${year}`;
+    loadTasks();
+  }
+
+  // โหลดงานจาก Firebase สำหรับวันที่เลือก
+  function loadTasks() {
+    const taskList = document.getElementById('taskList');
+    taskList.innerHTML = '';
+    if (!selectedDate || !firebaseInitialized) {
+      taskList.innerHTML = '<li class="no-tasks">ยังไม่ได้เชื่อมต่อ Firebase</li>';
+      return;
+    }
+
+    db.ref(`tasks/${selectedDate}`).on('value', (snapshot) => {
+      taskList.innerHTML = '';
+      const tasks = snapshot.val();
+      if (tasks) {
+        Object.keys(tasks).forEach(taskId => {
+          const task = tasks[taskId];
+          const li = document.createElement('li');
+          li.className = 'task-item';
+          li.style.backgroundColor = task.color;
+          li.innerHTML = `
+              <span onclick="editTask('${taskId}', '${task.text}', '${task.color}')">${task.text}</span>
+              <button onclick="deleteTask('${taskId}')">ลบ</button>
+            `;
+          taskList.appendChild(li);
+        });
+      } else {
+        const li = document.createElement('li');
+        li.className = 'no-tasks';
+        li.textContent = 'ไม่มีงานในวันนี้';
+        taskList.appendChild(li);
+      }
+    }, (error) => {
+      console.error("Error loading tasks:", error);
+      taskList.innerHTML = '<li class="no-tasks">เกิดข้อผิดพลาดในการโหลดงาน</li>';
+    });
+  }
+
+  // เพิ่มงานใหม่
+  function addTask() {
+    if (!firebaseInitialized) {
+      alert('กรุณาเชื่อมต่อ Firebase ก่อนเพิ่มงาน');
+      return;
+    }
+    const taskInput = document.getElementById('taskInput');
+    const taskColor = document.getElementById('taskColor').value;
+    const taskText = taskInput.value.trim();
+    if (!taskText || !selectedDate) return;
+
+    const newTask = { text: taskText, color: taskColor };
+    db.ref(`tasks/${selectedDate}`).push(newTask);
+    taskInput.value = '';
+  }
+
+  // ลบงาน
+  function deleteTask(taskId) {
+    if (!firebaseInitialized) return;
+    db.ref(`tasks/${selectedDate}/${taskId}`).remove();
+  }
+
+  // แก้ไขงาน
+  function editTask(taskId, currentText, currentColor) {
+    if (!firebaseInitialized) return;
+    const newText = prompt('แก้ไขงาน:', currentText);
+    if (newText === null) return;
+
+    const newColor = prompt('เลือกสีใหม่ (ใส่รหัสสีเช่น #ffccbc หรือกด Enter เพื่อใช้สีเดิม):', currentColor);
+    const updatedTask = {
+      text: newText.trim() || currentText,
+      color: newColor ? newColor.trim() : currentColor
+    };
+    db.ref(`tasks/${selectedDate}/${taskId}`).update(updatedTask);
+  }
+
+  // เริ่มต้นตารางและบันทึกงานตัวอย่าง
+  generateCalendar();
+  if (firebaseInitialized) {
+    saveInitialTasks();
+  }
+</script>
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyBJ3gxcDbgFZv8MSJEfANdLcvA64eWxXZ8",
+    authDomain: "valentinecalender.firebaseapp.com",
+    projectId: "valentinecalender",
+    storageBucket: "valentinecalender.firebasestorage.app",
+    messagingSenderId: "668903698349",
+    appId: "1:668903698349:web:bf390cfd89aa8651e0fb24",
+    measurementId: "G-9Z6493JGH1"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
+</body>
+</html>
